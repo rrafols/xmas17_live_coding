@@ -1,0 +1,414 @@
+<html>
+<style>
+  body { margin: 0px; }
+</style>
+<body>
+  <script>
+    var canvas = document.getElementById('c');
+    var c = canvas.getContext('2d');
+
+    var width = window.innerWidth;
+    var height = window.innerHeight;
+
+    var mousePressed = false;
+    var mx, my;
+    var cx, cy;
+    var angle = -90 * 2;
+    var angle_t = 90;
+    var FOV = 512;
+    var DIST = 512;
+    var FLAKES = 768;
+    var prjPoints = [];
+    var snow = [];
+
+    canvas.width = width;
+    canvas.height = height;
+
+    cx = width / 2;
+    cy = 3 * height / 4;
+    var radius = height / 6;
+
+    for (var i = 0; i < FLAKES; i++) {
+      snow.push({
+        x: Math.random() - 0.5,
+        y: Math.random() * height - height,
+        z: Math.random() - 0.5, 
+        radius: (Math.random() + 0.2) * 8
+      });
+    }
+
+    window.addEventListener('mousedown', function(e) {
+      mousePressed = true;
+      mx = e.pageX;
+    });
+
+    window.addEventListener('mouseup', function() {
+      mousePressed = false;
+    });
+
+    window.addEventListener('mousemove', function(e) {
+      if (mousePressed) {
+        angle_t += (mx - e.pageX) * 4;
+        if (angle_t >= 360) {
+          angle_t -= 360;
+          angle -= 360;
+        }
+
+        if (angle_t <= -180) {
+          angle_t += 360;
+          angle += 360;
+        }
+
+        mx = e.pageX;
+      }
+    });
+
+    function render(ts) {
+      c.fillStyle = '#28a';
+      c.fillRect(0, 0, width, height);
+
+      angle += (angle_t - angle) / 16;
+      var positions = [];
+      var loopY = cy;
+      var loopR = radius;
+      for (var i = 0; i < 3; i++) {
+        var newRadius = loopR * 0.8;
+        positions.push(cx + loopR);
+        positions.push(loopY);
+        positions.push(loopR);
+        loopY -= (loopR + newRadius) * 0.75;
+        loopR = newRadius;
+      }
+
+      computeArms(positions);
+      animateSnow();
+
+      drawSnow(true);
+      drawFloor();
+
+      drawSnowmanArms(true);
+      if ((angle >= 0 && angle < 180) || (angle > 360 && angle < 540)) {
+        drawSnowmanBody(positions);
+        drawSnowmanEyes(positions);
+        drawSnowmanNose(positions);
+      } else {
+        drawSnowmanEyes(positions);
+        drawSnowmanNose(positions);
+        drawSnowmanBody(positions);
+      }
+      drawSnowmanArms(false);
+      drawSnowmanScarf(positions);
+      drawSnow(false);
+
+      requestAnimationFrame(render);
+    }
+
+    function hexColor(c) {
+      if(c == 10) return 'a';
+      if(c == 11) return 'b';
+      if(c == 12) return 'c';
+      if(c == 13) return 'd';
+      if(c == 14) return 'e';
+      if(c == 15) return 'f';
+      return c;
+    }
+
+    function drawSnowmanScarf(positions) {
+      c.save();
+      c.globalAlpha = 0.94;
+      var angleDispl = angle * Math.PI/180.0;
+      var yoff = positions[positions.length - 3 + 1] + positions[positions.length - 3 + 2];
+      yoff += positions[positions.length - 6 + 1] - positions[positions.length - 6 + 2];
+      yoff /= 2;
+
+      c.translate(width/2, yoff);
+      var r = positions[positions.length - 3 + 2] * 1.2;
+      var SCARF_HEIGHT = 10 * positions[positions.length - 3 + 2] * 0.06;;
+      var HSEGMENTS = 20;
+      var VSEGMENTS = 5;
+      var h = SCARF_HEIGHT / VSEGMENTS;
+      for (var i = 0; i < VSEGMENTS; i++) {
+        var y0 = (i * h - VSEGMENTS * h * 0.5) | 0;
+        var y1 = ((i + 1) * h - VSEGMENTS * h * 0.5 + 2) | 0;
+        for  (var j = 0; j < HSEGMENTS; j++) {
+          var angle0 = (j * ((2 * Math.PI) / HSEGMENTS) + angleDispl) % (2 * Math.PI);
+          var angle1 = ((j + 1) * ((2 * Math.PI) / HSEGMENTS) + angleDispl) % (2 * Math.PI);
+
+          var x0 = r * Math.sin(angle0);
+          var z0 = r * Math.cos(angle0);
+          var x1 = r * Math.sin(angle1);
+          var z1 = r * Math.cos(angle1);
+
+          var xp0 = (FOV * x0 / (z0 + DIST)) |0;
+          var xp1 = (FOV * x1 / (z1 + DIST)) |0;
+
+          var yp0 = (FOV * y0 / (z0 + DIST)) |0;
+          var yp1 = (FOV * y1 / (z1 + DIST)) |0;
+
+          var yl = (i + 0.5)/(VSEGMENTS * 0.5);
+          if (yl > 1) yl = 1 - (yl - 1);
+
+          var zl = Math.abs(((z0 + z1) * 0.5) / r);
+          var alpha = yl * 0.3 + zl * 0.7;
+
+          c.beginPath();
+          c.moveTo(xp0, yp0);
+          c.lineTo(xp1, yp0);
+          c.lineTo(xp1, yp1);
+          c.lineTo(xp0, yp1);
+          c.lineTo(xp0, yp1);
+
+          if(angle0 > Math.PI/2 && angle0 < Math.PI + Math.PI/2) {
+            var colR = hexColor((14 * alpha) | 0);
+            var colG = hexColor((14 * alpha) | 0);
+            var colB = hexColor((2 * alpha) | 0);
+
+            var fillColor = '#' + colR + '' + colG + '' + colB;
+            c.fillStyle = fillColor;
+            c.fill();
+
+            c.lineWidth = 4;
+            if (i == 0) {
+              c.beginPath();
+              c.moveTo(xp0, yp0);
+              c.lineTo(xp1, yp0);
+              c.stroke();
+            } else if (i == VSEGMENTS - 1) {
+              c.beginPath();
+              c.moveTo(xp0, yp1);
+              c.lineTo(xp1, yp1);
+              c.stroke();
+            }
+            c.lineWidth = 1;
+          } else {
+            //  c.stroke();
+          }
+        }
+      }
+      c.restore();
+    }
+
+    function computeArms(positions) {
+      var i = positions.length - 6;
+
+      var points = [];
+      //left
+      points.push(positions[i + 2]);
+      points.push(positions[i + 1]) ;
+      points.push(0);
+
+      points.push(positions[i + 2] * 2);
+      points.push(positions[i + 1] * 0.9);
+      points.push(positions[i + 2] * 0.5);
+
+      points.push(positions[i + 2] * 3);
+      points.push(positions[i + 1] * 1.2);
+      points.push(0);
+
+      points.push(positions[i + 2] * 3.3);
+      points.push(positions[i + 1] * 1.3);
+      points.push(-positions[i + 2] * 0.2);
+
+      points.push(positions[i + 2] * 2.75);
+      points.push(positions[i + 1] * 1.3);
+      points.push(-positions[i + 2] * 0.2);
+
+      //right
+      points.push(-positions[i + 2]);
+      points.push(positions[i + 1]);
+      points.push(0);
+
+      points.push(-positions[i + 2] * 2);
+      points.push(positions[i + 1] * 0.9);
+      points.push(positions[i + 2] * 0.5);
+
+      points.push(-positions[i + 2] * 3);
+      points.push(positions[i + 1] * 1.2);
+      points.push(0);
+
+      points.push(-positions[i + 2] * 3.3);
+      points.push(positions[i + 1] * 1.3);
+      points.push(0);
+
+      points.push(-positions[i + 2] * 2.75);
+      points.push(positions[i + 1] * 1.3);
+      points.push(0);
+
+      var rotPoints = [];
+      var cos = Math.cos(Math.PI * angle / 180.0);
+      var sin = Math.sin(Math.PI * angle / 180.0);
+      for(var j = 0; j < points.length; j += 3) {
+        rotPoints[j + 0] = points[j + 0] * sin - points[j + 2] * cos;
+        rotPoints[j + 1] = points[j + 1];
+        rotPoints[j + 2] = points[j + 0] * cos + points[j + 2] * sin;
+      }
+
+      for(var j = 0; j < rotPoints.length/3; j++) {
+        prjPoints[j * 2 + 0] = width/2 + FOV * rotPoints[j * 3 + 0] / (DIST + rotPoints[j * 3 + 2]);
+        prjPoints[j * 2 + 1] = points[j * 3 + 1];
+      }
+    }
+
+    function drawSnowmanArms(before) {
+      c.lineWidth = 5;
+      c.beginPath();
+      i = 0;
+      if((!before && angle >= 90 && angle <= 270) || before) {
+        c.moveTo(prjPoints[i  ], prjPoints[i + 1]); i += 2;
+        c.bezierCurveTo(prjPoints[i  ], prjPoints[i + 1], prjPoints[i + 2], prjPoints[i + 3], prjPoints[i + 4], prjPoints[i + 5]);
+        i+=2;
+        c.moveTo(prjPoints[i  ], prjPoints[i + 1]); i += 4;
+        c.lineTo(prjPoints[i  ], prjPoints[i + 1]); i += 2;
+      } else {
+        i += 10;
+      }
+
+      if((!before && angle >= 270) || (!before && angle <= 90) || before) {          
+        c.moveTo(prjPoints[i  ], prjPoints[i + 1]); i += 2;
+        c.bezierCurveTo(prjPoints[i  ], prjPoints[i + 1], prjPoints[i + 2], prjPoints[i + 3], prjPoints[i + 4], prjPoints[i + 5]);
+        i += 2;
+        c.moveTo(prjPoints[i  ], prjPoints[i + 1]); i += 4;
+        c.lineTo(prjPoints[i  ], prjPoints[i + 1]); i += 2;
+      }
+
+      c.stroke();
+      c.lineWidth = 1;
+    }
+
+    function drawSnowmanEyes(positions) {
+      var i = positions.length - 3;
+      var r = positions[i + 2] * 0.1;
+
+      var s0 = Math.sin(Math.PI * (angle + 15) / 180.0);
+      var c0 = Math.cos(Math.PI * (angle + 15) / 180.0);
+      var s1 = Math.sin(Math.PI * (angle - 15) / 180.0);
+      var c1 = Math.cos(Math.PI * (angle - 15) / 180.0);
+
+      var z0 = positions[i + 2] * s0;
+      var x0 = positions[i + 2] * c0;
+
+      var z1 = positions[i + 2] * s1;
+      var x1 = positions[i + 2] * c1;
+
+      var px1 = FOV * x0 / (DIST + z0);
+      var px2 = FOV * x1 / (DIST + z1);
+
+      c.fillStyle = '#000';
+      c.beginPath();
+      c.arc(px1 + cx, positions[i + 1] - r, r, 0, 360);
+      c.arc(px2 + cx, positions[i + 1] - r, r, 0, 360);
+      c.fill();
+    }
+
+    function drawSnowmanNose(positions) {
+      var i = positions.length - 3;
+      var r = positions[i + 2] * 0.1;
+      var h = positions[i + 2] * 0.1;
+
+      var s0 = Math.sin(Math.PI * angle / 180.0);
+      var c0 = Math.cos(Math.PI * angle / 180.0);
+
+      var z0 = positions[i + 2] * s0;
+      var x0 = positions[i + 2] * c0;
+
+      var z1 = positions[i + 2] * 2 * s0;
+      var x1 = positions[i + 2] * 2 * c0;
+
+      var px0 = FOV * x0 / (DIST + z0);
+      var px1 = FOV * x1 / (DIST + z1);
+
+      c.lineWidth = r * 2 * 0.8;
+      c.strokeStyle = '#f40';
+      c.beginPath();
+      c.moveTo(positions[i + 0] - positions[i + 2] + px0, positions[i + 1] + r * 2);
+      c.lineTo(positions[i + 0] - positions[i + 2] + px1, positions[i + 1] + r * 2);
+      c.stroke();
+
+      c.fillStyle = '#f40';
+      c.beginPath();
+      c.arc(positions[i + 0] - positions[i + 2] + px0, positions[i + 1] + r * 2, r * 0.8, 0, 360);
+      c.arc(positions[i + 0] - positions[i + 2] + px1, positions[i + 1] + r * 2, r * 0.8, 0, 360);
+      c.fill();
+
+      c.strokeStyle = '#000';
+      c.lineWidth = 1;
+    }
+
+    function drawFloor() {
+      c.save();
+      c.scale(1, 0.2);
+      c.fillStyle = '#ddd';
+      c.beginPath();
+      c.arc(cx, (cy + radius) * 5, radius * 3, 0, 360);
+      c.fill();
+      c.restore();
+    }
+
+    function animateSnow() {
+      var cos = Math.cos(Math.PI * (-angle) / 180.0);
+      var sin = Math.sin(Math.PI * (-angle) / 180.0);
+
+      for (var i = 0; i < FLAKES; i++) {
+        snow[i].x += Math.random() * 0.006 - 0.003;
+        snow[i].y += Math.random() * 1.6;
+        snow[i].z += Math.random() * 0.006 - 0.003;
+
+        if (snow[i].y > height) {
+          snow[i] = {
+            x: Math.random() - 0.5,
+            y: 0,
+            z: Math.random() - 0.5, 
+            radius: (Math.random() + 0.2) * 8
+          };
+        }
+      }
+
+      for (var i = 0; i < FLAKES; i++) {
+        snow[i].rx = snow[i].x * sin - snow[i].z * cos;
+        snow[i].rz = snow[i].x * cos + snow[i].z * sin;
+      }
+
+      for (var i = 0; i < FLAKES; i++) {
+        snow[i].prx = FOV * snow[i].rx / (DIST + snow[i].rz);
+      }
+    }
+
+    function drawSnow(before) {
+      c.fillStyle = '#ddee';
+      c.beginPath();
+      for (var i = 0; i < FLAKES; i++) {
+        var x = snow[i].prx * radius * 5 + cx;
+        var y = snow[i].y;
+        if (before && snow[i].rz <= 0) {
+          c.moveTo(x, y);
+          c.arc(x, y, snow[i].radius, 0, 360);
+        } else if (!before && snow[i].rz > 0) {
+          c.moveTo(x, y);
+          c.arc(x, y, snow[i].radius, 0, 360);
+        }
+      }
+      c.fill();
+    }
+
+    function drawSnowmanBody(positions) {
+      c.fillStyle = '#000';
+      c.beginPath();
+      for (var i = 0; i < 3; i++) {
+        c.moveTo(positions[i * 3], positions[i * 3 + 1]);
+        c.arc(cx, positions[i * 3 + 1], positions[i * 3 + 2] * 1.05, 0, 360, false);
+      }
+      c.fill();
+
+      c.fillStyle = '#fff';
+      c.beginPath();
+      for (var i = 0; i < 3; i++) {
+        c.moveTo(positions[i * 3], positions[i * 3 + 1]);
+        c.arc(cx, positions[i * 3 + 1], positions[i * 3 + 2], 0, 360, false);
+      }
+      c.fill();
+    }
+
+    requestAnimationFrame(render);
+  </script>
+  <canvas id='c'></canvas>
+</body>
